@@ -1,0 +1,123 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - main
+      - '*.x'
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { php: '8.2', laravel: '10.*', testbench: '8.*', stability: prefer-lowest }
+          - { php: '8.3', laravel: '10.*', testbench: '8.*', stability: prefer-stable }
+          - { php: '8.2', laravel: '11.*', testbench: '9.*', stability: prefer-stable }
+          - { php: '8.4', laravel: '11.*', testbench: '9.*', stability: prefer-stable }
+          - { php: '8.2', laravel: '12.*', testbench: '10.*', stability: prefer-stable }
+          - { php: '8.5', laravel: '12.*', testbench: '10.*', stability: prefer-stable }
+          - { php: '8.3', laravel: '13.*', testbench: '11.*', stability: prefer-lowest }
+          - { php: '8.5', laravel: '13.*', testbench: '11.*', stability: prefer-stable }
+
+    name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.stability }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo
+          ini-values: error_reporting=E_ALL
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
+          composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
+
+      - name: PHPStan
+        if: matrix.laravel == '13.*' && matrix.stability == 'prefer-stable'
+        run: composer analyse
+
+      - name: Linter
+        if: matrix.laravel == '13.*' && matrix.stability == 'prefer-stable'
+        run: composer lint:check
+
+      - name: Test Suite
+        run: composer test:unit
+
+  php74-syntax:
+    runs-on: ubuntu-latest
+
+    name: PHP 7.4 syntax
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '7.4'
+          coverage: none
+
+      - name: Lint source files
+        run: find src config -name '*.php' -print0 | xargs -0 -n1 php -l
+
+  legacy:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { php: '7.4', laravel: '5.4.*' }
+          - { php: '7.4', laravel: '5.8.*' }
+          - { php: '7.4', laravel: '6.*' }
+          - { php: '7.4', laravel: '7.*' }
+          - { php: '7.4', laravel: '8.*' }
+          - { php: '8.0', laravel: '9.*' }
+          - { php: '8.1', laravel: '10.*' }
+
+    name: Smoke - P${{ matrix.php }} - L${{ matrix.laravel }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo
+          tools: composer:v2
+          coverage: none
+
+      - name: Create Laravel app
+        run: |
+          composer create-project "laravel/laravel:${{ matrix.laravel }}" "$RUNNER_TEMP/app" --no-install --no-scripts --no-interaction
+          cd "$RUNNER_TEMP/app"
+          composer config audit.block-insecure false
+          composer config allow-plugins true
+          composer install --no-scripts --no-interaction --no-progress
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run smoke test
+        run: tests/Legacy/smoke.sh "$RUNNER_TEMP/app" php
