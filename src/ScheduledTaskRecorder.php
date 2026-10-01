@@ -144,7 +144,7 @@ class ScheduledTaskRecorder
      */
     private function record(Event $task, callable $change): void
     {
-        if (! config('scheduler-monitor.enabled')) {
+        if (! config('scheduler-monitor.enabled', true)) {
             return;
         }
 

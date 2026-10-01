@@ -16,12 +16,18 @@ use SanjayaCloud\SchedulerMonitor\Console\ListScheduledTasksCommand;
 
 class SchedulerMonitorServiceProvider extends ServiceProvider
 {
+    /**
+     * When the app's config was cached before this package was installed,
+     * mergeConfigFrom() is skipped, so every setting has a fallback.
+     */
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/scheduler-monitor.php', 'scheduler-monitor');
 
         $this->app->singleton(ScheduleRunStore::class, function (): ScheduleRunStore {
-            return new ScheduleRunStore((string) config('scheduler-monitor.path'));
+            $path = config('scheduler-monitor.path');
+
+            return new ScheduleRunStore(is_string($path) && $path !== '' ? $path : storage_path('framework/scheduler-monitor.json'));
         });
         $this->app->singleton(ScheduledTaskRecorder::class);
         $this->app->singleton(ScheduleCallbackHooks::class);

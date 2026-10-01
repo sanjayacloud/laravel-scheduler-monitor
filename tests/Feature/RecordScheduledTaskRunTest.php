@@ -83,6 +83,18 @@ it('clears the previous failure when the task runs again', function (): void {
         ->error->toBeNull();
 });
 
+it('keeps recording when the app config was cached before the package was installed', function (): void {
+    config(['scheduler-monitor' => null]);
+    app(Schedule::class)->call(fn (): null => null)->everyMinute()->description('cached-config');
+
+    $this->artisan('schedule:run');
+
+    expect(listedTasks()['tasks'][0])->exit_code->toBe(0)
+        ->and(storage_path('framework/scheduler-monitor.json'))->toBeFile();
+
+    unlink(storage_path('framework/scheduler-monitor.json'));
+});
+
 it('does not record runs when disabled', function (): void {
     config(['scheduler-monitor.enabled' => false]);
     app(Schedule::class)->call(fn (): null => null)->everyMinute();
